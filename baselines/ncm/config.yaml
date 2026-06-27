@@ -1,0 +1,103 @@
+# =============================================================================
+# NCM Classifier — Configuration
+# Mensink et al., "Distance-Based Image Classification:
+#   Generalizing to New Classes at Near-Zero Cost," IEEE TPAMI 2013.
+# =============================================================================
+
+# Global seed for full reproducibility
+seed: 42
+
+# Device: "cuda" | "cpu" | "cuda:0"
+device: "cuda"
+
+# Directory to save checkpoints
+checkpoint_dir: "checkpoints/ncm"
+
+# -----------------------------------------------------------------------------
+# Backbone (frozen)
+# -----------------------------------------------------------------------------
+backbone:
+  # Any torchvision model name.  Set to null to use raw/pre-extracted features.
+  name: "resnet50"
+  # Load ImageNet-pretrained weights (strongly recommended)
+  pretrained: true
+  # backbone parameters are always frozen — no learning rate applies here
+
+# -----------------------------------------------------------------------------
+# Data
+# -----------------------------------------------------------------------------
+data:
+  # "cifar10" | "cifar100" | "imagefolder"
+  # imagefolder expects: root/train/<class>/*.jpg and root/val/<class>/*.jpg
+  dataset: "cifar100"
+
+  # Root directory for data download / loading
+  root: "./data"
+
+  # Image resolution fed to the backbone
+  image_size: 224
+
+  # ImageNet normalisation (matches pretrained backbone)
+  mean: [0.485, 0.456, 0.406]
+  std:  [0.229, 0.224, 0.225]
+
+  num_workers: 4
+
+# -----------------------------------------------------------------------------
+# Model
+# -----------------------------------------------------------------------------
+model:
+  # Number of output classes.
+  # Set explicitly or leave 0 to auto-detect from the dataset.
+  num_classes: 100   # 100 for CIFAR-100; 1000 for ImageNet
+
+  # Feature dimensionality *after* backbone.
+  # Inferred automatically when backbone.name is set; set explicitly
+  # when using pre-extracted features (backbone.name = null).
+  feat_dim: 2048     # ResNet-50 output dim
+
+  # ----- Metric learning ----------------------------------------------------
+  # Rank of the projection matrix W ∈ R^{metric_dim × feat_dim}.
+  # 0  → plain NCM with Euclidean distance (no learnable W).
+  # >0 → NCM-ML / NCM-MM: learn a low-rank Mahalanobis metric.
+  # Paper reports metric_dim = 200 on ImageNet; try 128–512 for others.
+  metric_dim: 256
+
+  # ----- NCM-MM (sub-means, Sec. 4) ----------------------------------------
+  # 1  → plain NCM or NCM-ML (single mean per class).
+  # >1 → NCM-MM: multiple sub-means per class, updated via EM.
+  num_sub_means: 1
+
+  # Number of EM iterations per epoch (only used when num_sub_means > 1)
+  em_iters: 5
+
+  # Softmax temperature τ for the probabilistic loss (Eq. 8).
+  # Lower = sharper; 1.0 is the paper default.
+  temperature: 1.0
+
+# -----------------------------------------------------------------------------
+# Training
+# -----------------------------------------------------------------------------
+training:
+  # "ncm"    — one-pass mean estimation, no gradient descent (fastest).
+  # "ncm_ml" — learn W via SGD on NCM cross-entropy loss.
+  # "ncm_mm" — NCM-ML + EM updates for sub-means (requires num_sub_means > 1).
+  mode: "ncm_ml"
+
+  epochs: 30
+  batch_size: 256
+
+  # SGD hyperparameters (paper uses SGD with momentum)
+  lr: 0.01
+  momentum: 0.9
+  weight_decay: 0.0001
+
+  # Learning-rate step decay schedule
+  # (empty list → constant LR; paper decays by 10× at epochs 15 and 25)
+  lr_decay_epochs: [15, 25]
+  lr_decay_factor: 0.1
+
+  # How often to re-estimate class means:
+  #   "epoch" — one full re-pass after each gradient epoch (default, matches paper)
+  #   "batch" — online running-average update after each mini-batch
+  mean_update: "epoch"
